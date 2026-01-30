@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Plus, Loader2 } from 'lucide-react'
 import { Button } from '../ui/button'
 import {
@@ -18,6 +18,7 @@ import {
   useDeleteTodo,
   useToggleComplete,
 } from '../../hooks/useTodos'
+import { useCalendarEvents } from '../../hooks/useCalendarEvents'
 import { useTodoStore } from '../../store/todoStore'
 import type { TodoWithCategory, TodoFormData } from '../../types'
 
@@ -27,6 +28,7 @@ export function MobileTodoPanel() {
 
   const { data: categories } = useCategories()
   const { data: todos, isLoading, isError } = useTodos()
+  const { data: calendarEvents } = useCalendarEvents()
 
   const createTodo = useCreateTodo()
   const updateTodo = useUpdateTodo()
@@ -36,12 +38,18 @@ export function MobileTodoPanel() {
   const selectedCategory = useTodoStore((s) => s.selectedCategory)
   const setSelectedCategory = useTodoStore((s) => s.setSelectedCategory)
 
+  // Get set of todo IDs that are assigned to calendar
+  const assignedTodoIds = useMemo(() => {
+    return new Set(calendarEvents?.map((e) => e.resource.todo_id) ?? [])
+  }, [calendarEvents])
+
   const handleAddClick = () => {
     setEditingTodo(null)
     setModalOpen(true)
   }
 
   const handleEdit = (todo: TodoWithCategory) => {
+    console.log('[MobileTodoPanel] handleEdit called:', todo.id, todo.title)
     setEditingTodo(todo)
     setModalOpen(true)
   }
@@ -115,6 +123,7 @@ export function MobileTodoPanel() {
           <TodoList
             todos={todos}
             selectedCategory={selectedCategory}
+            assignedTodoIds={assignedTodoIds}
             onToggle={handleToggle}
             onEdit={handleEdit}
             onDelete={handleDelete}

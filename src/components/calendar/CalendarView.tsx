@@ -6,13 +6,15 @@ import { addMinutes } from 'date-fns'
 import { Loader2 } from 'lucide-react'
 import { localizer, messages, formats } from '../../lib/calendar'
 import { EventBlock } from './EventBlock'
+import { CalendarHeader } from './CalendarHeader'
+import { TodoModal, type TodoModalMode } from '../todo/TodoModal'
 import {
   useCalendarEvents,
   useCreateCalendarEvent,
   useUpdateCalendarEvent,
   useDeleteCalendarEvent,
 } from '../../hooks/useCalendarEvents'
-import { useTodos } from '../../hooks/useTodos'
+import { useTodos, useUpdateTodo, useDeleteTodo } from '../../hooks/useTodos'
 import {
   Dialog,
   DialogContent,
@@ -27,7 +29,7 @@ import {
   SelectValue,
 } from '../ui/select'
 import { Button } from '../ui/button'
-import type { BigCalendarEvent, TodoWithCategory } from '../../types'
+import type { BigCalendarEvent, TodoWithCategory, TodoFormData } from '../../types'
 
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css'
@@ -74,29 +76,55 @@ export function CalendarView({ view: activeView, onViewChange }: CalendarViewPro
 
   // Handle drop from TodoCard
   const containerRef = useRef<HTMLDivElement>(null)
-  const [, drop] = useDrop<{ todo: TodoWithCategory }, void, unknown>({
-    accept: 'TODO_CARD',
-    drop: (item) => {
-      // This is a simplified approach - in production you'd calculate the exact time
-      // from the mouse position relative to the calendar
-      const now = new Date()
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0)
-      const end = addMinutes(start, item.todo.estimated_duration)
 
-      createEvent.mutate({
-        todo_id: item.todo.id,
-        start_time: start,
-        end_time: end,
-        color: item.todo.category?.color,
-      })
-    },
-  })
+  const [{ isOver, canDrop }, drop] = useDrop<{ todo: TodoWithCategory }, void, { isOver: boolean; canDrop: boolean }>(
+    () => ({
+      accept: 'TODO_CARD',
+      drop: (item) => {
+        console.log('[CalendarView] Drop received:', item.todo.title)
+        // Use selected date with current hour
+        const now = new Date()
+        const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), now.getHours(), 0)
+        const end = addMinutes(start, item.todo.estimated_duration)
 
+        createEvent.mutate({
+          todo_id: item.todo.id,
+          start_time: start,
+          end_time: end,
+          color: item.todo.category?.color,
+        })
+      },
+      collect: (monitor) => ({
+        isOver: monitor.isOver(),
+        canDrop: monitor.canDrop(),
+      }),
+    }),
+    [date, createEvent]
+  )
+
+  // Auto-scroll to current time on mount
   useEffect(() => {
-    if (containerRef.current) {
-      drop(containerRef.current)
+    const scrollToCurrentTime = () => {
+      const timeContent = containerRef.current?.querySelector('.rbc-time-content')
+      if (!timeContent) return
+
+      const now = new Date()
+      const hours = now.getHours()
+      const minutes = now.getMinutes()
+
+      // Each hour slot is 80px (timeslots=4, each 20px)
+      const slotHeight = 80
+      const scrollPosition = (hours + minutes / 60) * slotHeight
+
+      // Scroll to position with some offset to center the current time
+      const offset = timeContent.clientHeight / 3
+      timeContent.scrollTop = Math.max(0, scrollPosition - offset)
     }
-  }, [drop])
+
+    // Small delay to ensure calendar is rendered
+    const timer = setTimeout(scrollToCurrentTime, 200)
+    return () => clearTimeout(timer)
+  }, [view, date])
 
   const handleSelectSlot = useCallback((slotInfo: SlotInfo) => {
     setSelectSlot({ start: slotInfo.start, end: slotInfo.end })
@@ -157,6 +185,21 @@ export function CalendarView({ view: activeView, onViewChange }: CalendarViewPro
     setSelectedTodo('')
   }
 
+  const handleQuickAssign = useCallback(
+    (todoId: string, start: Date, end: Date, color?: string) => {
+      createEvent.mutate({
+        todo_id: todoId,
+        start_time: start,
+        end_time: end,
+        color: color ?? null,
+      })
+    },
+    [createEvent]
+  )
+
+  // Get raw events for CalendarHeader
+  const rawEvents = events?.map((e) => e.resource) ?? []
+
   const eventPropGetter = useCallback((event: BigCalendarEvent) => {
     const color = event.resource.todo?.category?.color ?? event.resource.color ?? '#6366f1'
     return {
@@ -180,36 +223,54 @@ export function CalendarView({ view: activeView, onViewChange }: CalendarViewPro
 
   return (
     <div ref={containerRef} className="h-full calendar-container">
-      <DnDCalendar
-        localizer={localizer}
-        events={events ?? []}
-        view={view}
-        onView={handleViewChange}
-        date={date}
-        onNavigate={setDate}
-        step={15}
-        timeslots={4}
-        min={new Date(1970, 0, 1, 0, 0, 0)}
-        max={new Date(1970, 0, 1, 23, 59, 59)}
-        selectable
-        resizable
-        draggableAccessor={() => true}
-        resizableAccessor={() => true}
-        onSelectSlot={handleSelectSlot}
-        onSelectEvent={handleSelectEvent}
-        onEventDrop={handleEventDrop}
-        onEventResize={handleEventResize}
-        eventPropGetter={eventPropGetter}
-        messages={messages}
-        formats={formats}
-        components={{
-          event: ({ event }) => (
-            <EventBlock event={event} onDelete={handleDeleteEvent} />
-          ),
-        }}
-        culture="ko"
-        className="h-full"
-      />
+      {/* Mobile only: show CalendarHeader with unassigned todos */}
+      <div className="lg:hidden">
+        <CalendarHeader
+          selectedDate={date}
+          todos={todos ?? []}
+          events={rawEvents}
+          onQuickAssign={handleQuickAssign}
+          onDateChange={setDate}
+        />
+      </div>
+      <div
+        ref={drop}
+        className={`flex-1 min-h-0 overflow-hidden transition-colors ${
+          isOver && canDrop ? 'bg-primary/10 ring-2 ring-primary ring-inset' : ''
+        }`}
+      >
+        <DnDCalendar
+          localizer={localizer}
+          events={events ?? []}
+          view={view}
+          onView={handleViewChange}
+          date={date}
+          onNavigate={setDate}
+          step={15}
+          timeslots={4}
+          min={new Date(1970, 0, 1, 0, 0, 0)}
+          max={new Date(1970, 0, 1, 23, 59, 59)}
+          scrollToTime={new Date(1970, 0, 1, Math.max(0, new Date().getHours() - 1), 0, 0)}
+          selectable
+          resizable
+          draggableAccessor={() => true}
+          resizableAccessor={() => true}
+          onSelectSlot={handleSelectSlot}
+          onSelectEvent={handleSelectEvent}
+          onEventDrop={handleEventDrop}
+          onEventResize={handleEventResize}
+          eventPropGetter={eventPropGetter}
+          messages={messages}
+          formats={formats}
+          components={{
+            event: ({ event }) => (
+              <EventBlock event={event} onDelete={handleDeleteEvent} />
+            ),
+          }}
+          culture="ko"
+          className="h-full"
+        />
+      </div>
 
       {/* Slot selection dialog */}
       <Dialog open={!!selectSlot} onOpenChange={() => setSelectSlot(null)}>

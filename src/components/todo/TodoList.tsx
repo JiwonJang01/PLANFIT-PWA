@@ -6,6 +6,7 @@ import type { TodoWithCategory } from '../../types'
 interface TodoListProps {
   todos: TodoWithCategory[]
   selectedCategory: string | null
+  assignedTodoIds?: Set<string>
   onToggle: (id: string, is_completed: boolean) => void
   onEdit: (todo: TodoWithCategory) => void
   onDelete: (id: string) => void
@@ -37,7 +38,7 @@ function groupByCategory(todos: TodoWithCategory[]): GroupedTodos[] {
   return Array.from(map.values())
 }
 
-export function TodoList({ todos, selectedCategory, onToggle, onEdit, onDelete }: TodoListProps) {
+export function TodoList({ todos, selectedCategory, assignedTodoIds, onToggle, onEdit, onDelete }: TodoListProps) {
   const [showCompleted, setShowCompleted] = useState(false)
 
   const activeTodos = todos.filter((t) => !t.is_completed)
@@ -48,6 +49,7 @@ export function TodoList({ todos, selectedCategory, onToggle, onEdit, onDelete }
       <TodoCard
         key={todo.id}
         todo={todo}
+        isAssigned={assignedTodoIds?.has(todo.id) ?? false}
         onToggle={onToggle}
         onEdit={onEdit}
         onDelete={onDelete}

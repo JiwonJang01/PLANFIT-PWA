@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus, Loader2 } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Plus, Loader2, CalendarCheck } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Separator } from '../ui/separator'
 import {
@@ -19,6 +19,7 @@ import {
   useDeleteTodo,
   useToggleComplete,
 } from '../../hooks/useTodos'
+import { useCalendarEvents } from '../../hooks/useCalendarEvents'
 import { useTodoStore } from '../../store/todoStore'
 import type { TodoWithCategory, TodoFormData } from '../../types'
 
@@ -28,6 +29,7 @@ export function RightPanel() {
 
   const { data: categories } = useCategories()
   const { data: todos, isLoading, isError } = useTodos()
+  const { data: calendarEvents } = useCalendarEvents()
 
   const createTodo = useCreateTodo()
   const updateTodo = useUpdateTodo()
@@ -36,6 +38,13 @@ export function RightPanel() {
 
   const selectedCategory = useTodoStore((s) => s.selectedCategory)
   const setSelectedCategory = useTodoStore((s) => s.setSelectedCategory)
+
+  // Get set of todo IDs that are assigned to calendar (any date)
+  const assignedTodoIds = useMemo(() => {
+    const ids = new Set(calendarEvents?.map((e) => e.resource.todo_id) ?? [])
+    console.log('[RightPanel] assignedTodoIds:', Array.from(ids), 'from', calendarEvents?.length ?? 0, 'events')
+    return ids
+  }, [calendarEvents])
 
   const handleAddClick = () => {
     setEditingTodo(null)
@@ -115,6 +124,7 @@ export function RightPanel() {
               <TodoList
                 todos={todos}
                 selectedCategory={selectedCategory}
+                assignedTodoIds={assignedTodoIds}
                 onToggle={handleToggle}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
